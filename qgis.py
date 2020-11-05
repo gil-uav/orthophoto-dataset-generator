@@ -65,9 +65,8 @@ def get_ortophoto_layers():
     layers = [
         l
         for l in QgsProject.instance().mapLayers().values()
-        if l.type() == QgsMapLayer.RasterLayer()
+        if l.type() == QgsMapLayer.RasterLayer
     ]
-    print("Got {} layers".format(len(layers)))
     return layers
 
 
@@ -83,16 +82,14 @@ def export_basedata_as_img(layer, export_path: str):
         Orthophoto layer to produce ground-truth map from.
 
     """
-    outfile = os.path.join(
-        QgsProject.instance().homePath(), "{}.png".format(layer.name())
-    )
+    outfile = os.path.join(export_path, "{}_y.png".format(layer.name()))
 
     settings = QgsMapSettings()
     settings.setLayers(
-        {
-            QgsProject.instance().mapLayersByName("fkb_bygning_omrade"),
-            QgsProject.instance().mapLayersByName("fkb_vann_omrade"),
-        }
+        [
+            QgsProject.instance().mapLayersByName("fkb_bygning_omrade")[0],
+            QgsProject.instance().mapLayersByName("fkb_vann_omrade")[0],
+        ]
     )
     settings.setBackgroundColor(QColor(0, 0, 0))
     settings.setOutputSize(QSize(layer.width(), layer.height()))
@@ -105,12 +102,13 @@ def export_basedata_as_img(layer, export_path: str):
 
     render.finished.connect(finished)
     render.start()
+    print("Ground truth image export of {} started.".format(layer.name()))
     from qgis.PyQt.QtCore import QEventLoop
 
     loop = QEventLoop()
     render.finished.connect(loop.quit)
     loop.exec_()
-    print("Basedata images of {} created.".format(layer.name()))
+    print("Ground truth image of {} exported to: {}".format(layer.name(), outfile))
 
 
 def export_all_ground_truth_maps(export_path: str):
@@ -121,4 +119,5 @@ def export_all_ground_truth_maps(export_path: str):
         Where to save the image.
     """
     for l in get_ortophoto_layers():
-        export_basedata_as_img(l)
+        export_basedata_as_img(l, export_path)
+
