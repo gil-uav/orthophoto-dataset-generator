@@ -34,7 +34,7 @@ To use functions from [qgis.py](https://github.com/gil-uav/orthophoto-dataset-ge
 script file in Qgis and run the functions at the bottom of the script. Ground truth(GT) vector maps must be imported manually.
 Changes style(colors) etc as you see fit. NB! Change naming of the GT layers in the `export_basedata_as_img` function:
 ```python
-def (layer, export_path: str):
+def export_basedata_as_img(layer, export_path: str):
     ...
     settings.setLayers(
         [
