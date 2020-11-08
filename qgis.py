@@ -84,6 +84,10 @@ def export_basedata_as_img(layer, export_path: str):
     """
     outfile = os.path.join(export_path, "{}_y.png".format(layer.name()))
 
+    if os.path.isfile(outfile):
+        print("Skipping, file exists: {}".format(outfile))
+        return
+
     settings = QgsMapSettings()
     settings.setLayers(
         [
