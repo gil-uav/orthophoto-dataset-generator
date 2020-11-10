@@ -3,18 +3,19 @@ import math
 import ntpath
 import os
 import sys
+import argparse
 from glob import glob
+
+import PIL
 import click
 
-from PIL import Image
-
-import argparse
+from PIL import Image, ImageStat
 
 from tqdm import tqdm
 
 DATASET_DIR = "dataset"
-X_DIR = "x"
-Y_DIR = "y"
+IMG_DIR = "images"
+MSK_DIR = "masks"
 MAPS_EXT = "tif"
 GT_MAPS_EXT = "png"
 SET_RESOLUTION = (512, 512)
@@ -22,16 +23,19 @@ SET_RESOLUTION = (512, 512)
 # We are working with pretty large images.
 Image.MAX_IMAGE_PIXELS = None
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def def_args(parent_parser=None):
+    """
+    Defines argument parser.
+    """
     if parent_parser:
         child_parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
     else:
         child_parser = argparse.ArgumentParser(
-            description="Creates a dataset from ortophotos and ground truth images. "
+            description="Creates a dataset from orthophotos and ground truth images. "
             'Ortophotos must end with "_x", and ground truths with "_y"'
         )
     child_parser.add_argument(
@@ -59,8 +63,184 @@ def def_args(parent_parser=None):
         required=True,
         help="Directory where ground truth labels are located.",
     )
+    child_parser.add_argument(
+        "-1",
+        dest="skip_black",
+        action="store_false",
+        help="Export images containing black pixels. I.e out of map-bounds.",
+    )
+    child_parser.add_argument(
+        "-2",
+        dest="skip_no_class",
+        action="store_false",
+        help="Export images containing only background class.",
+    )
+    child_parser.add_argument(
+        "-3",
+        dest="skip_all_water",
+        action="store_false",
+        help="Export images containing only water bodies.",
+    )
 
     return child_parser
+
+
+def get_dataset(path: str):
+    """
+    Gets the dataset as two lists of paths to the files.
+    Dataset must have the following convention:
+    dataset/
+        images/
+            1_x.png
+        masks/
+            1_y.png
+
+    Parameters
+    ----------
+    path : path to the dataset
+
+    Returns
+    -------
+
+    """
+    image_path = os.path.join(path, "images")
+    mask_path = os.path.join(path, "masks")
+    image_files = []
+    mask_files = []
+    if os.path.isdir(image_path) and os.path.isdir(mask_path):
+        for (dir_path, _, filenames) in os.walk(image_path):
+            for f in filenames:
+                image_files.append(os.path.join(dir_path, f))
+        for (dir_path, _, filenames) in os.walk(mask_path):
+            for f in filenames:
+                mask_files.append(os.path.join(dir_path, f))
+        x = len(image_files)
+        y = len(mask_files)
+        if x != y:
+            logger.warning(
+                "Found un-even numbers of x-y for dataset. x = %i, y = %i.", x, y
+            )
+        if x == 0:
+            logger.warning("Found 0 existing sets.")
+            return image_files, mask_files
+        logger.info("Found %i sets in existing dataset.", x)
+        return image_files, mask_files
+
+    logger.error("Could not locate x and y folder.")
+    sys.exit()
+
+
+def img_to_set(img_msk):
+    """
+    Returns image or mask with corresponding set-pair.
+    Parameters
+    ----------
+    img_msk : str
+        image or mask path
+
+    Returns
+    -------
+    tup : tuple
+        (img_file_path, msk_file_path)
+    string : str
+        "img_file_path, msk_file_path"
+
+    """
+    tup = ("", "")
+    string = ""
+    if "_x" in img_msk:
+        tup = (img_msk, img_msk.replace("_x", "_y").replace("images", "masks"))
+        string = "{},{}".format(tup[0], tup[1])
+    if "_y" in img_msk:
+        tup = (img_msk, img_msk.replace("_y", "_x").replace("masks", "images"))
+        string = "{},{}".format(tup[1], tup[0])
+
+    return tup, string
+
+
+def file_to_list(path: str):
+    """
+    Gets images and mask paths from file.
+    Parameters
+    ----------
+    path : str
+        File path
+
+    Returns
+    -------
+    files : list[(img,msk)]
+
+    """
+    files = []
+    with open(path, "r") as file_handler:
+        for line in file_handler.readlines():
+            split = line.split(",")
+            files.append((split[1], split[2].replace("\n", "")))
+
+    return files
+
+
+def contains_black(image):
+    """
+    Returns true if image contains black pixels.
+    Parameters
+    ----------
+    image : PIL.Image
+
+    Returns
+    -------
+    bool
+
+    """
+    extrema = ImageStat.Stat(image).extrema
+    r = extrema[0][0]
+    g = extrema[1][0]
+    b = extrema[2][0]
+    if r == 0 and g == 0 and b == 0:
+        return True
+    return False
+
+
+def no_classes(mask):
+    """
+    Returns true if mask is all black.
+    Parameters
+    ----------
+    mask : PIL.Image
+
+    Returns
+    -------
+    bool
+
+    """
+    extrema = ImageStat.Stat(mask).extrema
+    r = extrema[0][1]
+    g = extrema[1][1]
+    b = extrema[2][1]
+    if r == 0 and g == 0 and b == 0:
+        return True
+    return False
+
+
+def only_water_bodies(image):
+    """
+    Returns true if image contains black pixels.
+    Parameters
+    ----------
+    image : PIL.Image
+
+    Returns
+    -------
+    bool
+
+    """
+    extrema = ImageStat.Stat(image).extrema
+    r_l, r_h = extrema[0]
+    g_l, g_h = extrema[1]
+    b_l, b_h = extrema[2]
+    if r_l == g_l == b_l == r_h == g_h == b_h == 127:
+        return True
+    return False
 
 
 def make_dirs(path):
@@ -74,117 +254,25 @@ def make_dirs(path):
     Returns
     -------
     dirs : tuple
-        Tuple that containts path to dataset, x-files and y-files.
+        Tuple that contains path to dataset, x-files and y-files.
 
     """
     ds_path = os.path.join(os.path.join(path, DATASET_DIR))
-    x_path = os.path.join(ds_path, X_DIR)
-    y_path = os.path.join(ds_path, Y_DIR)
+    x_path = os.path.join(ds_path, IMG_DIR)
+    y_path = os.path.join(ds_path, MSK_DIR)
     paths = [ds_path, x_path, y_path]
     for p in paths:
         try:
             os.mkdir(p)
-            log.info("Directory {} created".format(ds_path))
+            logger.info("Directory %s created", ds_path)
         except Exception as e:
-            log.warning("Failed to create directories: {}".format(e))
-    return (ds_path, x_path, y_path)
+            logger.warning("Failed to create directories: %s", e)
+    return ds_path, x_path, y_path
 
 
-def check_existing_dataset(path: str):
+def gen_crop_area(x_res, y_res, dim):
     """
-    Checks if dataset exists and returns number of samples if it does.
-
-    Parameters
-    ----------
-    path
-
-    Returns
-    -------
-
-    """
-    x_path = os.path.join(path, "x")
-    y_path = os.path.join(path, "y")
-    if os.path.isdir(x_path) and os.path.isdir(y_path):
-        _, _, x_files = next(os.walk(x_path))
-        _, _, y_files = next(os.walk(y_path))
-        x = len(x_files)
-        y = len(y_files)
-        if x != y:
-            log.warning(
-                "Found un-even numbers of x-y for dataset. x = {}, y = {}.".format(x, y)
-            )
-            return -1
-        if x == 0:
-            log.info("Found 0 existing sets.")
-            return 0
-        else:
-            log.info("Found {} sets in existing dataset.".format(x))
-            return x
-    else:
-        log.error("Could not locate x and y folder.")
-        sys.exit()
-
-
-def create_sets(dirs: tuple, index: int, maps_dir: str, gt_maps_dir: str):
-    """
-    Creates the sets en each folder x and y.
-    Parameters
-    ----------
-    dirs : tuple
-        Tuple of three strings: dataset path, x files path and y files path.
-    index : int
-        Index to start sets from.
-    maps_dir :
-        Path to maps
-    gt_maps_dir
-        Path to GT maps
-
-    """
-    maps = get_maps(maps_dir, MAPS_EXT)
-    gt_maps = get_maps(gt_maps_dir, GT_MAPS_EXT)
-    log.info(
-        "Found {} orthomaps and {} ground truth maps.".format(len(maps), len(gt_maps))
-    )
-    index = index
-    with tqdm(total=len(maps), desc="Maps") as pbar:
-        for m in maps:
-            try:
-                orthomap = Image.open(m)
-                gt_map = Image.open(get_gt_map(m, gt_maps))
-                if orthomap.size == gt_map.size:
-                    boxes = gen_crop_area(
-                        SET_RESOLUTION[0], SET_RESOLUTION[1], orthomap.size
-                    )
-                    with tqdm(
-                        total=len(boxes),
-                        leave=False,
-                        desc="Sets for {}".format(os.path.basename(m)),
-                    ) as pbar2:
-                        for b in boxes:
-                            map_crop = orthomap.crop(b)
-                            gt_map_crop = gt_map.crop(b)
-                            map_fn = os.path.join(dirs[1], "{}_x.png".format(index))
-                            gt_map_fn = os.path.join(dirs[2], "{}_y.png".format(index))
-                            map_crop.save(map_fn)
-                            gt_map_crop.save(gt_map_fn)
-                            pbar2.set_description(
-                                "Sets for {}(index: {})".format(
-                                    os.path.basename(m), index
-                                )
-                            )
-                            pbar2.update()
-                            index += 1
-                else:
-                    continue
-            except Exception as e:
-                log.error("Error occurred while creating set: {}".format(e))
-                log.error("Skipping {}".format(m))
-            pbar.update()
-
-
-def gen_crop_area(x_res, y_res, size):
-    """
-    Genereates boxes for crop function.
+    Generates boxes for crop function.
 
     Parameters
     ----------
@@ -192,7 +280,7 @@ def gen_crop_area(x_res, y_res, size):
         resolution height
     y_res : int
         resolution width
-    size : int
+    dim : tuple
         Map size
 
     Returns
@@ -202,8 +290,8 @@ def gen_crop_area(x_res, y_res, size):
 
     """
     crop_area = []
-    for x in range(math.floor(size[0] / x_res)):
-        for y in range(math.floor(size[1] / y_res)):
+    for x in range(math.floor(dim[0] / x_res)):
+        for y in range(math.floor(dim[1] / y_res)):
             left = x * x_res
             right = left + x_res
             upper = y * y_res
@@ -213,12 +301,12 @@ def gen_crop_area(x_res, y_res, size):
     return crop_area
 
 
-def get_gt_map(map, gt_maps):
+def get_gt_map(raster_map, gt_maps):
     """
     Returns the corresponding ground truth map for a certain map.
     Parameters
     ----------
-    map : str
+    raster_map : str
         Map to get GT from.
     gt_maps : list
         List of all GT maps.
@@ -229,17 +317,18 @@ def get_gt_map(map, gt_maps):
         Path to GT map.
 
     """
-    for m in gt_maps:
-        map_fn = ntpath.basename(map).split(".".format(MAPS_EXT))[0]
-        gt_map_fn = (
-            ntpath.basename(m).split(".".format(GT_MAPS_EXT))[0].replace("_y", "")
-        )
-        if map_fn == gt_map_fn:
-            log.info("X: {} Y: {}".format(map_fn, gt_map_fn))
-            return m
+    for gt_m in gt_maps:
+        map_name = ntpath.basename(raster_map).split(".")[0]
+        gt_map_name = ntpath.basename(gt_m).split(".")[0].replace("_y", "")
+        if map_name == gt_map_name:
+            logger.info("X: %s Y: %s", map_name, gt_map_name)
+            return gt_m
+
+    logger.warning("Unable to get ground truth image for %s", raster_map)
+    return None
 
 
-def get_maps(path: str, ext: str):
+def get_maps(path: str, ext: str) -> list:
     """
     Returns all map-files from path.
     Parameters
@@ -259,6 +348,157 @@ def get_maps(path: str, ext: str):
         y for x in os.walk(path) for y in glob(os.path.join(x[0], "*.{}".format(ext)))
     ]
     return result
+
+
+def check_existing_dataset(path: str):
+    """
+    Checks if dataset exists and returns number of samples if it does.
+
+    Parameters
+    ----------
+    path
+
+    Returns
+    -------
+
+    """
+    x_path = os.path.join(path, IMG_DIR)
+    y_path = os.path.join(path, MSK_DIR)
+    if os.path.isdir(x_path) and os.path.isdir(y_path):
+        _, _, x_files = next(os.walk(x_path))
+        _, _, y_files = next(os.walk(y_path))
+        x = len(x_files)
+        y = len(y_files)
+        if x != y:
+            logger.warning(
+                "Found un-even numbers of x-y for dataset. x = %i, y = %i.", x, y
+            )
+            return -1
+        if x == 0:
+            logger.info("Found 0 existing sets.")
+            return 0
+        logger.info("Found %s sets in existing dataset.", x)
+        return x
+    logger.error("Could not locate x and y folder.")
+    sys.exit()
+
+
+def add_to_set(
+    map_crop: PIL.Image,
+    gt_map_crop: PIL.Image,
+    skip_black: bool = True,
+    skip_water: bool = True,
+    skip_no_class: bool = True,
+) -> bool:
+    """
+    Tests the set, return if it should be added or not.
+    Parameters
+    ----------
+    map_crop : PIL.Image
+        Cropped image from map
+    gt_map_crop : PIL.Image
+        Cropped image from ground truth map
+    skip_black : bool
+        Skip images containing black pixels
+    skip_water : bool
+        Skip images containing only water bodies
+    skip_no_class : bool
+        Skip images containing only background class
+
+    Returns
+    -------
+    bool
+
+    """
+    if skip_black and contains_black(map_crop):
+        return False
+    if skip_water and only_water_bodies(gt_map_crop):
+        return False
+    if skip_no_class and no_classes(gt_map_crop):
+        return False
+    return True
+
+
+def create_sets(
+    path: tuple,
+    maps_ath: str,
+    gt_maps_path: str,
+    ds_index: int = 0,
+    skip_black: bool = True,
+    skip_water: bool = True,
+    skip_no_class: bool = True,
+):
+    """
+    Creates the sets en each folder x and y.
+    Parameters
+    ----------tuple
+    dirs : tuple
+        Tuple of three strings: dataset path, x files path and y files path.
+    index : int
+        Index to start sets from.
+    maps_dir : str
+        Path to maps
+    gt_maps_dir : str
+        Path to GT maps
+    skip_black : bool
+        Skips images containing black pixels. I.e out of raster map bounds.
+    skip_water : bool
+        Skips images containing only water bodies.
+    skip_no_class : bool
+        Skips images containing only background class.
+
+    """
+    maps = get_maps(maps_ath, MAPS_EXT)
+    gt_maps = get_maps(gt_maps_path, GT_MAPS_EXT)
+    logger.info(
+        "Found %i aerial maps and %i ground truth maps.", len(maps), len(gt_maps)
+    )
+    with tqdm(total=len(maps), desc="Maps") as pbar:
+        for m in maps:
+            try:
+                ortho_map = Image.open(m)
+                gt_map = Image.open(get_gt_map(m, gt_maps))
+                if ortho_map.size == gt_map.size:
+                    boxes = gen_crop_area(
+                        SET_RESOLUTION[0], SET_RESOLUTION[1], ortho_map.size
+                    )
+                    with tqdm(
+                        total=len(boxes),
+                        leave=False,
+                        desc="Sets for {}".format(os.path.basename(m)),
+                    ) as pbar2:
+                        for b in boxes:
+                            map_crop = ortho_map.crop(b)
+                            gt_map_crop = gt_map.crop(b)
+                            if add_to_set(
+                                map_crop,
+                                gt_map_crop,
+                                skip_black=skip_black,
+                                skip_water=skip_water,
+                                skip_no_class=skip_no_class,
+                            ):
+                                map_fn = os.path.join(
+                                    path[1], "{}_x.png".format(ds_index)
+                                )
+                                gt_map_fn = os.path.join(
+                                    path[2], "{}_y.png".format(ds_index)
+                                )
+                                map_crop.save(map_fn)
+                                gt_map_crop.save(gt_map_fn)
+                                ds_index += 1
+
+                            pbar2.set_description(
+                                "Sets for {}(index: {})".format(
+                                    os.path.basename(m), ds_index
+                                )
+                            )
+                            pbar2.update()
+                else:
+                    continue
+            except Exception as e:
+                logger.error("Error occurred while creating set: %s", e)
+                logger.error("Skipping %s", m)
+            pbar.update()
 
 
 if __name__ == "__main__":
@@ -283,4 +523,4 @@ if __name__ == "__main__":
     maps_dir = args.x_dir
     gt_maps_dir = args.y_dir
 
-    create_sets(dirs, index, maps_dir, gt_maps_dir)
+    create_sets(dirs, maps_dir, gt_maps_dir, index)
