@@ -125,3 +125,4 @@ def export_all_ground_truth_maps(export_path: str):
     for l in get_ortophoto_layers():
         export_basedata_as_img(l, export_path)
 
+export_all_ground_truth_maps("/media/vegovs/MoseSchrute/GroundTruth/")
