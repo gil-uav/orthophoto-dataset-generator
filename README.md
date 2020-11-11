@@ -60,14 +60,17 @@ export_all_ground_truth_maps("/path/to/export/folder")
 
 ## Generator usage
 ```
-usage: ordage.py [-h] -o PATH -x PATH -y PATH
+usage: ordage.py [-h] -o PATH -x PATH -y PATH [-1] [-2] [-3]
 
-Creates a dataset from ortophotos and ground truth images. Ortophotos must end
-with "_x", and ground truths with "_y"
+Creates a dataset from orthophotos and ground truth images. Ortophotos must
+end with "_x", and ground truths with "_y"
 
 optional arguments:
   -h, --help  show this help message and exit
   -o PATH     Root of dataset folder. Appends samples if dataset exists.
   -x PATH     Directory where ortophotos are located.
   -y PATH     Directory where ground truth labels are located.
+  -1          Export images containing black pixels. I.e out of map-bounds.
+  -2          Export images containing only background class.
+  -3          Export images containing only water bodies.
 ```
