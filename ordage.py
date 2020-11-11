@@ -591,8 +591,8 @@ def get_statistics(path):
         file.write("Water pixels: {}\n".format(water))
         file.write("Background pixels: {}\n".format(background))
         file.write("Building percentage: {}\n".format(buildings_perc))
-        file.write("Water pixels: {}\n".format(water_perc))
-        file.write("Background pixels: {}\n".format(background_perc))
+        file.write("Water percentage: {}\n".format(water_perc))
+        file.write("Background percentage: {}\n".format(background_perc))
 
     with open(filename, "r") as file_r:
         print(file_r.read())
