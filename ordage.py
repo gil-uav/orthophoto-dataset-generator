@@ -1,16 +1,15 @@
+import argparse
 import logging
 import math
 import ntpath
 import os
 import sys
-import argparse
 from glob import glob
 
 import PIL
 import click
-
+import numpy as np
 from PIL import Image, ImageStat
-
 from tqdm import tqdm
 
 DATASET_DIR = "dataset"
@@ -301,6 +300,35 @@ def gen_crop_area(x_res, y_res, dim):
     return crop_area
 
 
+def reduce_and_grayscale(mask):
+    """
+    Synthetically reduces interpolation to nearest neighbour and converts to grayscale.
+    Parameters
+    ----------
+    mask : PIL.Image
+        Mask to reduce anc convert.
+
+    Returns
+    -------
+    gray_mask : PIL:Image
+        Mask as grayscale, and with only three different colours.
+
+    """
+    r, _, _, _ = Image.Image.split(mask)
+
+    r = np.asarray(r)
+
+    water = np.logical_and(r <= 190, r > 63)
+    buildings = r > 190
+
+    np_mask = np.zeros_like(r)
+    np_mask[water] = 127
+    np_mask[buildings] = 255
+
+    gray_mask = Image.fromarray(np_mask)
+    return gray_mask
+
+
 def get_gt_map(raster_map, gt_maps):
     """
     Returns the corresponding ground truth map for a certain map.
@@ -484,6 +512,7 @@ def create_sets(
                                     path[2], "{}_y.png".format(ds_index)
                                 )
                                 map_crop.save(map_fn)
+                                gt_map_crop = reduce_and_grayscale(gt_map_crop)
                                 gt_map_crop.save(gt_map_fn)
                                 ds_index += 1
 
