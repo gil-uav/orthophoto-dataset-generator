@@ -1,4 +1,4 @@
-# Orthopoto dataset generator (WIP :construction:)
+# Orthopoto dataset generator
 **Members** : <a href="https://github.com/vegovs">Vegard Bergsvik Øvstegård</a>
 
 **Supervisors** : <a href="https://www.mn.uio.no/ifi/personer/vit/jimtoer/">Jim Tørresen</a>
