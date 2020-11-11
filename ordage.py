@@ -63,6 +63,12 @@ def def_args(parent_parser=None):
         help="Directory where ground truth labels are located.",
     )
     child_parser.add_argument(
+        "-s",
+        dest="stat",
+        action="store_false",
+        help="Disable statistics gathering for the dataset.",
+    )
+    child_parser.add_argument(
         "-1",
         dest="skip_black",
         action="store_false",
@@ -512,8 +518,8 @@ def create_sets(
                                     path[2], "{}_y.png".format(ds_index)
                                 )
                                 map_crop.save(map_fn)
-                                gt_map_crop = reduce_and_grayscale(gt_map_crop)
-                                gt_map_crop.save(gt_map_fn)
+                                gray_gt_map_crop = reduce_and_grayscale(gt_map_crop)
+                                gray_gt_map_crop.save(gt_map_fn)
                                 ds_index += 1
 
                             pbar2.set_description(
@@ -528,6 +534,68 @@ def create_sets(
                 logger.error("Error occurred while creating set: %s", e)
                 logger.error("Skipping %s", m)
             pbar.update()
+
+
+def get_statistics(path):
+    """
+    Gathers statistics such as mean, standard deviation and class percentages.
+    Prints the statistics and writes them to a file at path.
+
+    Parameters
+    ----------
+    path : str
+        Dataset path
+
+    """
+    images, masks = get_dataset(path)
+    buildings = 0
+    background = 0
+    water = 0
+    mean = np.zeros(3)
+    std = np.zeros(3)
+
+    with tqdm(
+        total=len(images), desc="Getting statistics..", leave=False, position=0
+    ) as pbar:
+        for i, m in zip(images, masks):
+            image = Image.open(i)
+            stat = ImageStat.Stat(image)
+            mean = np.add(np.asarray(stat.mean), mean)
+            std = np.add(np.asarray(stat.stddev), std)
+
+            mask = Image.open(m)
+            for c in mask.getcolors():
+                if c[1] == 0:
+                    background += c[0]
+                if c[1] == 127:
+                    water += c[0]
+                if c[1] == 255:
+                    buildings += c[0]
+            pbar.update()
+
+    mean = np.divide(mean, len(images))
+    std = np.divide(std, len(images))
+
+    all_pixels = buildings + background + water
+    buildings_perc = (buildings / all_pixels) * 100
+    water_perc = (water / all_pixels) * 100
+    background_perc = (background / all_pixels) * 100
+
+    filename = os.path.join(path, "myfile.txt")
+
+    with open(filename, "w") as file:
+        file.write("Mean: {}\n".format(mean))
+        file.write("Standard deviation: {}\n".format(std))
+
+        file.write("Building pixels: {}\n".format(buildings))
+        file.write("Water pixels: {}\n".format(water))
+        file.write("Background pixels: {}\n".format(background))
+        file.write("Building percentage: {}\n".format(buildings_perc))
+        file.write("Water pixels: {}\n".format(water_perc))
+        file.write("Background pixels: {}\n".format(background_perc))
+
+    with open(filename, "r") as file_r:
+        print(file_r.read())
 
 
 if __name__ == "__main__":
@@ -553,3 +621,6 @@ if __name__ == "__main__":
     gt_maps_dir = args.y_dir
 
     create_sets(dirs, maps_dir, gt_maps_dir, index)
+
+    if args.stat:
+        get_statistics(os.path.join(args.outdir, "dataset"))
