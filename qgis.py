@@ -43,7 +43,7 @@ def import_all_maps(path):
 
     """
     maps = [y for x in os.walk(path) for y in glob(os.path.join(x[0], "*.tif"))]
-    for m in ops:
+    for m in maps:
         import_map(m, root)
         print("{} imported.".format(os.path.basename(m)))
 
@@ -57,11 +57,6 @@ def get_ortophoto_layers():
         List of ortophoto layers.
 
     """
-    layers = [
-        l
-        for l in QgsProject.instance().mapLayers().values()
-        if l.name().startswith("33")
-    ]
     layers = [
         l
         for l in QgsProject.instance().mapLayers().values()
@@ -124,5 +119,6 @@ def export_all_ground_truth_maps(export_path: str):
     """
     for l in get_ortophoto_layers():
         export_basedata_as_img(l, export_path)
+
 
 export_all_ground_truth_maps("/media/vegovs/MoseSchrute/GroundTruth/")
