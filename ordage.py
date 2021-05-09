@@ -482,10 +482,11 @@ def to_binary(path):
     basename = os.path.basename(path)
     new_basename = basename.replace(".", "_binary.")
     new_path = os.path.join(dirname, new_basename)
+    os.popen(f'cp {path} {new_path}')
+    new_img = Image.open(new_path)
     thresh = 1
     fn = lambda x: 255 if x > thresh else 0
-    img = Image.open(path)
-    new_img = img.convert('L').point(fn, mode='1')
+    new_img.convert('L').point(fn, mode='1')
     new_img.save(new_path)
 
 
